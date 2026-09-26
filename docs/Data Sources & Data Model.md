@@ -179,7 +179,7 @@ External identifiers such as AniList or MyAnimeList IDs must not be used as prim
 
 ## 6. Character
 
-The Character core should contain information intrinsic to the character, rather than source-specific representations. Names and images are modeled separately so that multiple representations can coexist.
+The Character core distinguishes stable internal identity and normalized attributes from source-dependent or potentially conflicting information. Names and images are modeled separately so that multiple representations can coexist. Including an attribute in the core does not mean that every source agrees on its value.
 
 Current conceptual direction:
 
@@ -187,16 +187,47 @@ Current conceptual direction:
 CHARACTER
 ─────────
 id
-description
 gender
-date_of_birth
+
+birth_year       nullable
+birth_month      nullable
+birth_day        nullable
+
 created_at
 updated_at
 ```
 
 The timestamps describe the lifecycle of the AniCharaDB record. They do not, by themselves, identify the source of an imported value.
 
-This replaces the earlier simplified Character model with its single `name`, `native_name`, and `image_url` fields. It remains a **conceptual model**, not a final physical database schema. Attribute details and how conflicting source values become canonical values remain open.
+Names and images remain separate from the core, as previously decided. This refinement replaces the single `date_of_birth` field with partial birth-date components and moves `description` out of the core sketch into the broader source-dependent data discussion below. This is a **conceptual model**, not a final SQL or physical database schema, and the field list is not permanently finalized.
+
+### Partial Dates of Birth
+
+A fictional character's birthday may be known without a birth year, or only a month may be available. A single standard `DATE` value cannot express that uncertainty without supplying missing components.
+
+The year, month, and day should therefore be independently nullable. For example:
+
+```text
+birth_year  = null
+birth_month = 10
+birth_day   = 10
+```
+
+Or, when only the month is known:
+
+```text
+birth_year  = null
+birth_month = 10
+birth_day   = null
+```
+
+AniCharaDB should preserve partial information rather than invent a year or day to construct a complete date. Validation of partial dates and the final database representation remain open; this decision does not prescribe SQL types or constraints.
+
+### Gender
+
+Gender should be a nullable value that can be normalized from external sources, rather than a boolean such as `is_male = true`. A boolean cannot adequately represent known values, explicitly unknown values, missing information, and source values that still require normalization.
+
+The conceptual direction allows those cases without establishing a final enum. The vocabulary, normalization rules, and representation of explicitly unknown versus missing information still need to be designed. Conflicting source values must not be resolved merely by overwriting the current value.
 
 ### Character Names
 
@@ -257,9 +288,63 @@ is_primary
 
 This allows AniCharaDB to retain images from multiple providers while selecting one as the primary representation when necessary. The selection policy and how `source` is represented remain open. An image's source alone does not resolve provenance for other character attributes.
 
+### Source-Dependent Attributes
+
+Descriptions, age, height, and weight should not currently be treated as unquestionable canonical Character fields.
+
+**Description:** Different sources may provide different descriptions of the same character:
+
+```text
+Character
+│
+├── AniList description
+├── MyAnimeList description
+└── other source description
+```
+
+AniCharaDB should eventually retain where each description came from instead of blindly overwriting one description with another. This supersedes the earlier single core `description` field. The representation of descriptions is part of the broader provenance problem; no description or provenance table is defined yet.
+
+**Age:** A character may have different ages in different anime entries or at different points in a story:
+
+```text
+Character
+├── age during Anime A
+├── age during Anime B
+└── age during later story arc
+```
+
+Age is therefore not currently a simple canonical Character field. It requires a later model that can account for story context and source provenance. That model remains open.
+
+**Height and weight:** These values may change during the story, differ between sources, or be unknown. They may require both context and provenance, so their final representation remains open rather than being established as canonical core attributes.
+
+The conceptual distinction is:
+
+```text
+Character
+│
+├── Core identity / normalized attributes
+│
+├── CharacterName[]
+├── CharacterImage[]
+├── ExternalId[]
+│
+└── Source-dependent data
+    ├── descriptions
+    ├── age
+    ├── height
+    ├── weight
+    └── future attributes
+```
+
+This separates responsibilities conceptually; it does not introduce a storage structure for source-dependent data.
+
 ### Data Provenance — Open Decision
 
+> Data received from an external API must not automatically be treated as the canonical truth of AniCharaDB.
+
 As a multi-source database, AniCharaDB should likely retain the provenance of imported values. If AniList supplies one value and MyAnimeList supplies another, the system should eventually be able to determine which source supplied each value, even when a canonical value is selected.
+
+This applies to source-dependent descriptions and contextual attributes as well as conflicting values for normalized core attributes. AniList's role as the initial ingestion source does not establish an automatic precedence policy for every value.
 
 This will be important for:
 
@@ -396,6 +481,8 @@ erDiagram
 
 AnimeCharacter carries the role for each anime appearance. CharacterName and CharacterImage allow multiple representations without adding repeated fields to Character.
 
+The relationships remain unchanged by the refined Character attributes. Partial birth dates and nullable gender are described in the Character section. Source-dependent descriptions, age, height, and weight are intentionally not shown as additional entities: their contextual and provenance models have not yet been designed.
+
 Each ExternalId refers to one internal entity, selected conceptually by `entity_type` and `entity_id`: Anime or Character in the current model, not both. The two optional links show these alternative targets; the diagram does not encode their mutual exclusivity or prescribe physical foreign keys.
 
 This is a **conceptual model**, not the final database schema. Field sketches are documented in the entity sections above. The diagram does not define database types, required minimum counts, uniqueness constraints, or a provenance implementation.
@@ -411,7 +498,11 @@ The following decisions are currently established:
 - External IDs are stored separately.
 - Anime and Character have a many-to-many relationship.
 - Character role belongs to the Anime–Character relationship.
-- The Character core separates intrinsic attributes and record timestamps from names and images.
+- The Character core separates internal identity, normalized attributes, and record timestamps from names, images, and source-dependent data; its field list remains provisional.
+- Partial birth dates use independently nullable year, month, and day components conceptually, without inventing missing information.
+- Gender is nullable and normalizable, not a boolean; no final enum is established.
+- Descriptions require source provenance, while age, height, and weight may also require story context; their final representations remain open.
+- External API values are not automatically canonical truth, including when supplied by the initial primary source.
 - CharacterName supports an arbitrary number of names, with a type and language for each name; the name types remain provisional.
 - CharacterImage retains images from different sources and allows a primary representation to be selected; selection rules remain open.
 - Secondary sources will enrich existing data progressively.
@@ -422,7 +513,10 @@ The following decisions are currently established:
 
 The separation of Character, CharacterName, and CharacterImage establishes the current conceptual direction. Further decisions are needed before a physical schema or implementation can be defined:
 
-- Which additional intrinsic Character attributes are needed, and how should incomplete or conflicting values be represented?
+- Which additional attributes belong in the Character core, and how should conflicting source values become normalized values?
+- How should partial birth dates be validated and ultimately represented in the database?
+- What gender vocabulary and normalization rules are appropriate, and how should explicitly unknown values differ from missing information?
+- How should descriptions retain their source provenance, and how should age, height, and weight retain relevant story context and provenance?
 - What are the final name types, language conventions, and primary-name selection rules?
 - How should image sources be represented, and how should the primary image be selected?
 - How should value provenance, competing values, and source precedence be modeled, including during refreshes?
