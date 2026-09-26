@@ -4,6 +4,39 @@
 
 The goal is to progressively aggregate information from multiple data sources in order to create a unified, independent, and extensible anime character database.
 
+## Roadmap
+
+### Step 1 — Data Sources
+- [ ] Identify available APIs and datasets
+- [ ] Analyze the data provided by each source
+- [ ] Evaluate limitations, coverage, and reliability
+- [ ] Select the sources used by AniCharaDB
+
+### Step 2 — Data Model
+- [ ] Define the main entities
+- [ ] Define relationships between characters, anime, voice actors, and other entities
+- [ ] Handle alternative names and external identifiers
+- [ ] Design the data merging and deduplication strategy
+
+### Step 3 — Technical Architecture
+- [ ] Choose the database technology
+- [ ] Choose the data ingestion technologies
+- [ ] Define the AniCharaDB API architecture
+- [ ] Define the synchronization and update strategy
+
+### Step 4 — Repository Structure
+- [ ] Create the project structure
+- [ ] Organize data ingestion modules
+- [ ] Organize database components
+- [ ] Prepare configuration and development environments
+
+### Step 5 — Data Ingestion
+- [ ] Connect to the first selected data source
+- [ ] Import anime and character data
+- [ ] Normalize collected data
+- [ ] Store the data in AniCharaDB
+- [ ] Validate imported data
+
 ## Project Goal
 
 AniCharaDB aims to:
