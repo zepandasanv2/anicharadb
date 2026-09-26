@@ -7,13 +7,13 @@ The goal is to progressively aggregate information from multiple data sources in
 ## Roadmap
 
 ### Step 1 — Data Sources
-- [ ] Identify available APIs and datasets
+- [x] Identify available APIs and datasets
 - [ ] Analyze the data provided by each source
 - [ ] Evaluate limitations, coverage, and reliability
-- [ ] Select the sources used by AniCharaDB
+- [x] Select the sources used by AniCharaDB
 
 ### Step 2 — Data Model
-- [ ] Define the main entities
+- [x] Define the main entities
 - [ ] Define relationships between characters, anime, voice actors, and other entities
 - [ ] Handle alternative names and external identifiers
 - [ ] Design the data merging and deduplication strategy
@@ -36,6 +36,10 @@ The goal is to progressively aggregate information from multiple data sources in
 - [ ] Normalize collected data
 - [ ] Store the data in AniCharaDB
 - [ ] Validate imported data
+
+## Documentation
+
+- [Data Sources & Data Model](docs/Data%20Sources%20%26%20Data%20Model.md)
 
 ## Project Goal
 
