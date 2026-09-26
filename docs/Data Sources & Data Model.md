@@ -179,23 +179,98 @@ External identifiers such as AniList or MyAnimeList IDs must not be used as prim
 
 ## 6. Character
 
-Initial conceptual representation:
+The Character core should contain information intrinsic to the character, rather than source-specific representations. Names and images are modeled separately so that multiple representations can coexist.
+
+Current conceptual direction:
 
 ```text
 CHARACTER
 ─────────
 id
-name
-native_name
 description
 gender
 date_of_birth
-image_url
+created_at
+updated_at
 ```
 
-This model is intentionally minimal at this stage.
+The timestamps describe the lifecycle of the AniCharaDB record. They do not, by themselves, identify the source of an imported value.
 
-Character attributes will be reviewed separately before defining the final database schema.
+This replaces the earlier simplified Character model with its single `name`, `native_name`, and `image_url` fields. It remains a **conceptual model**, not a final physical database schema. Attribute details and how conflicting source values become canonical values remain open.
+
+### Character Names
+
+A character may have multiple names, spellings, aliases, nicknames, native names, or translations. Each name should be represented separately:
+
+```text
+CHARACTER_NAME
+--------------
+id
+character_id
+name
+type
+language
+```
+
+Potential name types include:
+
+```text
+PRIMARY
+NATIVE
+ALIAS
+NICKNAME
+ALTERNATIVE
+```
+
+These types are provisional, not a final enum. Language representation and rules for selecting a primary name still need to be defined.
+
+CharacterName supports an arbitrary number of names for each character. Fields such as `alternative_name_1`, `alternative_name_2`, and `alternative_name_3` impose a fixed limit and require structural changes whenever more names are needed. Separate name records also allow each name to carry its own type and language.
+
+Conceptually:
+
+```text
+Character: Naruto Uzumaki
+│
+├── Naruto Uzumaki
+│   type = PRIMARY
+│
+├── うずまきナルト
+│   type = NATIVE
+│
+└── Number One Hyperactive Knucklehead Ninja
+    type = ALIAS
+```
+
+### Character Images
+
+Different providers may supply different images of the same character. Images should therefore be represented separately from the Character core:
+
+```text
+CHARACTER_IMAGE
+---------------
+id
+character_id
+url
+source
+is_primary
+```
+
+This allows AniCharaDB to retain images from multiple providers while selecting one as the primary representation when necessary. The selection policy and how `source` is represented remain open. An image's source alone does not resolve provenance for other character attributes.
+
+### Data Provenance — Open Decision
+
+As a multi-source database, AniCharaDB should likely retain the provenance of imported values. If AniList supplies one value and MyAnimeList supplies another, the system should eventually be able to determine which source supplied each value, even when a canonical value is selected.
+
+This will be important for:
+
+- conflict resolution;
+- entity merging;
+- data quality;
+- debugging ingestion;
+- refreshing data;
+- determining which source should take precedence.
+
+External identifiers link entities across providers, but do not identify the origin of every attribute value. The granularity of provenance, how competing values and their history are retained, and how source precedence is decided still need to be designed. No final provenance storage model or conflict-resolution implementation has been chosen.
 
 ---
 
@@ -307,58 +382,23 @@ More advanced deduplication and entity-resolution mechanisms can be introduced l
 
 ## 10. Initial Data Model
 
-The current conceptual model is:
+The current conceptual relationships are:
 
-```text
-┌──────────────────┐
-│      ANIME       │
-├──────────────────┤
-│ id               │
-│ title            │
-│ title_english    │
-│ title_native     │
-│ format           │
-│ status           │
-│ episodes         │
-│ start_date       │
-│ end_date         │
-│ image_url        │
-└────────┬─────────┘
-         │
-         │
-┌────────▼─────────┐
-│ ANIME_CHARACTER  │
-├──────────────────┤
-│ anime_id         │
-│ character_id     │
-│ role             │
-└────────┬─────────┘
-         │
-         │
-┌────────▼─────────┐
-│    CHARACTER     │
-├──────────────────┤
-│ id               │
-│ name             │
-│ native_name      │
-│ description      │
-│ gender           │
-│ date_of_birth    │
-│ image_url        │
-└────────┬─────────┘
-         │
-         │
-┌────────▼─────────┐
-│   EXTERNAL_ID    │
-├──────────────────┤
-│ entity_type      │
-│ entity_id        │
-│ source           │
-│ external_id      │
-└──────────────────┘
+```mermaid
+erDiagram
+    Anime ||--o{ AnimeCharacter : has
+    Character ||--o{ AnimeCharacter : appears_in
+    Character ||--o{ CharacterName : has
+    Character ||--o{ CharacterImage : has
+    Anime |o--o{ ExternalId : identified_by
+    Character |o--o{ ExternalId : identified_by
 ```
 
-This is a **conceptual model**, not yet the final database schema.
+AnimeCharacter carries the role for each anime appearance. CharacterName and CharacterImage allow multiple representations without adding repeated fields to Character.
+
+Each ExternalId refers to one internal entity, selected conceptually by `entity_type` and `entity_id`: Anime or Character in the current model, not both. The two optional links show these alternative targets; the diagram does not encode their mutual exclusivity or prescribe physical foreign keys.
+
+This is a **conceptual model**, not the final database schema. Field sketches are documented in the entity sections above. The diagram does not define database types, required minimum counts, uniqueness constraints, or a provenance implementation.
 
 ---
 
@@ -371,16 +411,24 @@ The following decisions are currently established:
 - External IDs are stored separately.
 - Anime and Character have a many-to-many relationship.
 - Character role belongs to the Anime–Character relationship.
+- The Character core separates intrinsic attributes and record timestamps from names and images.
+- CharacterName supports an arbitrary number of names, with a type and language for each name; the name types remain provisional.
+- CharacterImage retains images from different sources and allows a primary representation to be selected; selection rules remain open.
 - Secondary sources will enrich existing data progressively.
 - Cross-source entity resolution will be introduced incrementally.
 - The internal model must remain independent from the schema of any external API.
 
-## 12. Next Decision
+## 12. Open Day 1 Questions
 
-Before defining the physical database schema, the Character entity must be explored in more detail.
+The separation of Character, CharacterName, and CharacterImage establishes the current conceptual direction. Further decisions are needed before a physical schema or implementation can be defined:
 
-The next step is to determine:
+- Which additional intrinsic Character attributes are needed, and how should incomplete or conflicting values be represented?
+- What are the final name types, language conventions, and primary-name selection rules?
+- How should image sources be represented, and how should the primary image be selected?
+- How should value provenance, competing values, and source precedence be modeled, including during refreshes?
+- How should full cross-source merging and deduplication work beyond known external-ID mappings?
+- How should voice actors and other planned entities relate to characters and anime?
+- What are the limitations, coverage, reliability, and licensing constraints of each source before integration?
+- Which database and ingestion technologies should be selected, and what should the API and synchronization architecture be?
 
-**What information should AniCharaDB store about a character?**
-
-Once the Character model is established, the conceptual model can be refined before selecting the final database implementation.
+Database selection remains open. These conceptual decisions do not establish a final physical schema, migrations, or application implementation.

@@ -15,7 +15,7 @@ The goal is to progressively aggregate information from multiple data sources in
 ### Step 2 — Data Model
 - [x] Define the main entities
 - [ ] Define relationships between characters, anime, voice actors, and other entities
-- [ ] Handle alternative names and external identifiers
+- [x] Handle alternative names and external identifiers
 - [ ] Design the data merging and deduplication strategy
 
 ### Step 3 — Technical Architecture
@@ -166,6 +166,8 @@ A confidence score could also be used to prevent AniCharaDB from automatically m
 ---
 
 ## Storage
+
+Database selection remains open; PostgreSQL and JSONB below are an initial proposal, not a final decision.
 
 The currently proposed architecture uses:
 
