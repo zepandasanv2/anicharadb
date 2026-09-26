@@ -121,6 +121,8 @@ AniCharaDB remains the canonical representation.
 
 External databases are considered **data providers**, not the source of AniCharaDB's internal identity.
 
+The overview above describes source roles, not direct writes into canonical entities. Every provider follows the observation, normalization, and conflict-resolution lifecycle described under [Data Provenance & Canonicalization](#data-provenance--canonicalization).
+
 ---
 
 ## 4. Core Entities
@@ -338,11 +340,11 @@ Character
 
 This separates responsibilities conceptually; it does not introduce a storage structure for source-dependent data.
 
-### Data Provenance — Open Decision
+### Data Provenance & Canonicalization
 
 > Data received from an external API must not automatically be treated as the canonical truth of AniCharaDB.
 
-As a multi-source database, AniCharaDB should likely retain the provenance of imported values. If AniList supplies one value and MyAnimeList supplies another, the system should eventually be able to determine which source supplied each value, even when a canonical value is selected.
+AniCharaDB must distinguish between what external sources report, normalized data, and canonical AniCharaDB values. The general provenance architecture is established: preserve source observations independently, normalize them, and resolve conflicts before selecting canonical values. External API values must never blindly overwrite canonical data. The physical representation and final resolution policies remain open.
 
 This applies to source-dependent descriptions and contextual attributes as well as conflicting values for normalized core attributes. AniList's role as the initial ingestion source does not establish an automatic precedence policy for every value.
 
@@ -355,7 +357,101 @@ This will be important for:
 - refreshing data;
 - determining which source should take precedence.
 
-External identifiers link entities across providers, but do not identify the origin of every attribute value. The granularity of provenance, how competing values and their history are retained, and how source precedence is decided still need to be designed. No final provenance storage model or conflict-resolution implementation has been chosen.
+External identifiers link entities across providers, but do not identify the origin of every attribute value.
+
+#### Source Observations
+
+AniCharaDB should preserve what each source reports independently. A conceptual observation could contain:
+
+```text
+SOURCE_OBSERVATION
+------------------
+id
+entity_type
+entity_id
+source
+field
+value
+retrieved_at
+source_url
+```
+
+This is a conceptual sketch, **not a final SQL or database schema**. It expresses the information needed to answer which source supplied a value, when it was retrieved, what was reported, and potentially where the information originated. A source URL may provide an origin reference when available; it does not guarantee knowledge of the source's own upstream provenance.
+
+The value representation, observation history and retention policy, handling of unmatched entities, and contextual attributes still need to be designed. Normalization must preserve the reported observation rather than replace it with the normalized result.
+
+#### Normalized and Canonical Values
+
+Normalization makes reported data comparable, for example by reconciling units or source-specific vocabulary. It does not establish which source is correct. Canonicalization selects the usable AniCharaDB value after considering the normalized observations and conflicts.
+
+For example, for the same character and comparable story context:
+
+```text
+Source observations:
+AniList     height = 180 cm
+MAL         height = 180 cm
+Source X    height = 166 cm
+
+Possible canonical value:
+height = 180 cm
+```
+
+This result is illustrative, not a decided resolution rule or an addition of height to the Character core. Different story contexts may legitimately contain different values and must not automatically be treated as conflicts.
+
+The canonical value and the original observations are separate concepts. Selecting or changing a canonical value must not destroy the observations supporting or contradicting it. AniCharaDB can expose usable canonical data while retaining that evidence.
+
+#### Source Precedence and Agreement
+
+Source quality may vary by field or category. Future precedence policies may differ for names, descriptions, images, physical attributes, external identifiers, and other metadata. There is no global `AniList > MAL > Wikidata` rule. Actual precedence rules remain open until source quality is evaluated for the relevant data.
+
+Agreement between independent sources may contribute evidence, but **majority does not automatically win**. Sources may copy the same upstream information, and agreement alone does not establish independence or correctness. Future conflict resolution may consider source reliability, source agreement, data freshness, and manual review. No final scoring, weighting, or resolution algorithm is established.
+
+#### Manual Overrides
+
+The architecture must support manual corrections or overrides. For example:
+
+```text
+AniList       → X
+MAL           → X
+Wikidata      → X
+
+Manual review → Y
+```
+
+A manually reviewed canonical value must not automatically be replaced by the next ingestion or synchronization cycle. New observations can still be preserved without silently discarding the correction. How overrides are recorded, reviewed, revised, or withdrawn remains open; no database implementation or moderation system is defined here.
+
+#### Conceptual Data Lifecycle
+
+```mermaid
+flowchart TD
+    subgraph Sources[External Sources]
+        AniList[AniList]
+        MAL[MyAnimeList]
+        Wikidata[Wikidata]
+        Future[Future sources]
+    end
+    AniList --> Observations[Preserve source observations]
+    MAL --> Observations
+    Wikidata --> Observations
+    Future --> Observations
+    Observations --> Normalize[Normalization]
+    Normalize --> Resolve[Conflict resolution]
+    Review[Manual review / overrides] --> Resolve
+    Resolve --> Canonical[Canonical AniCharaDB data]
+```
+
+These arrows describe conceptual processing, not destructive replacement of earlier data or physical database structures. Manual corrections must remain protected when the lifecycle runs again. This lifecycle does not specify the ingestion or synchronization implementation.
+
+The approach to avoid is:
+
+```text
+External API
+      │
+      ▼
+Overwrite Character
+```
+
+Canonicalization resolves values for an entity; determining whether records represent the same entity is a separate concern. This strategy does not complete the full merging or deduplication design.
 
 ---
 
@@ -481,7 +577,7 @@ erDiagram
 
 AnimeCharacter carries the role for each anime appearance. CharacterName and CharacterImage allow multiple representations without adding repeated fields to Character.
 
-The relationships remain unchanged by the refined Character attributes. Partial birth dates and nullable gender are described in the Character section. Source-dependent descriptions, age, height, and weight are intentionally not shown as additional entities: their contextual and provenance models have not yet been designed.
+The relationships remain unchanged by the refined Character attributes. Partial birth dates and nullable gender are described in the Character section. Source-dependent descriptions, age, height, and weight are intentionally not shown as additional entities: their final contextual representations remain open. The provenance lifecycle is established separately, but the observation sketch does not establish a physical table or additional ER relationships.
 
 Each ExternalId refers to one internal entity, selected conceptually by `entity_type` and `entity_id`: Anime or Character in the current model, not both. The two optional links show these alternative targets; the diagram does not encode their mutual exclusivity or prescribe physical foreign keys.
 
@@ -503,6 +599,9 @@ The following decisions are currently established:
 - Gender is nullable and normalizable, not a boolean; no final enum is established.
 - Descriptions require source provenance, while age, height, and weight may also require story context; their final representations remain open.
 - External API values are not automatically canonical truth, including when supplied by the initial primary source.
+- Source observations, normalized data, and canonical values are separate concepts; canonical changes preserve the original observations.
+- Canonicalization follows observation preservation, normalization, and conflict resolution, with manual overrides protected from automatic ingestion updates.
+- Source precedence must account for the field or category; actual priorities and conflict-resolution rules remain open, and source agreement is not a majority-vote rule.
 - CharacterName supports an arbitrary number of names, with a type and language for each name; the name types remain provisional.
 - CharacterImage retains images from different sources and allows a primary representation to be selected; selection rules remain open.
 - Secondary sources will enrich existing data progressively.
@@ -513,13 +612,15 @@ The following decisions are currently established:
 
 The separation of Character, CharacterName, and CharacterImage establishes the current conceptual direction. Further decisions are needed before a physical schema or implementation can be defined:
 
-- Which additional attributes belong in the Character core, and how should conflicting source values become normalized values?
+- Which additional attributes belong in the Character core, and which normalization rules make source values comparable before canonicalization?
 - How should partial birth dates be validated and ultimately represented in the database?
 - What gender vocabulary and normalization rules are appropriate, and how should explicitly unknown values differ from missing information?
 - How should descriptions retain their source provenance, and how should age, height, and weight retain relevant story context and provenance?
 - What are the final name types, language conventions, and primary-name selection rules?
 - How should image sources be represented, and how should the primary image be selected?
-- How should value provenance, competing values, and source precedence be modeled, including during refreshes?
+- How should observations, normalized values, canonical selections, and observation history be represented and retained physically, including during refreshes?
+- What field/category-specific precedence and conflict-resolution rules should apply after source quality is evaluated?
+- How should manual overrides be recorded, reviewed, revised, or withdrawn while remaining protected from automatic updates?
 - How should full cross-source merging and deduplication work beyond known external-ID mappings?
 - How should voice actors and other planned entities relate to characters and anime?
 - What are the limitations, coverage, reliability, and licensing constraints of each source before integration?
